@@ -8,8 +8,13 @@ pip install -r requirements.txt
 
 
 place spoofing and embeding model in the same folder 
+
+
 final_model.h5
 model.onnx
+
+
+
 
 
 in terminal 1 run 
