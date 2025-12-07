@@ -1,19 +1,25 @@
 # NADRA_FR
 implemented-spoofing-and embeding model 
 
-requirements python 3.9 
+---
+
+requirement:  python 3.9 
 
 
-pip install -r requirements.txt
+pip install -r requirements.txt 
 
+
+---
 
 place spoofing and embeding model in the same folder 
 
 
 final_model.h5
+
 model.onnx
 
 
+---
 
 
 
@@ -25,6 +31,9 @@ uvicorn api_server:app --reload --port 8000
 terminal 2 run  
 
 streamlit run streamlit_frontend.py
+
+
+---
 
 app available on 
   Local URL: http://localhost:8501
