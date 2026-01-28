@@ -1,3 +1,4 @@
+
 import os
 import cv2
 import numpy as np
@@ -43,7 +44,6 @@ print("✅ All models loaded successfully.")
 # Utility Functions
 # ==========================
 
-# 🔹 ADDED: unified face selection
 def get_largest_face(frame):
     faces = app_detector.get(frame)
     if len(faces) == 0:
@@ -103,25 +103,23 @@ async def enroll_person(file: UploadFile = File(...), name: str = Form(...)):
     img_bytes = await file.read()
     frame = cv2.imdecode(np.frombuffer(img_bytes, np.uint8), cv2.IMREAD_COLOR)
 
-    # 🔹 MODIFIED: face detection
     face, bbox = get_largest_face(frame)
     if face is None:
         return JSONResponse({"status": "error", "msg": "No face detected."})
 
     x1, y1, x2, y2 = bbox
 
-    # Spoof detection
     sx1, sy1, sx2, sy2 = expand_bbox(bbox, frame.shape)
     crop_rgb = cv2.cvtColor(frame[sy1:sy2, sx1:sx2], cv2.COLOR_BGR2RGB)
     spoof_score, label = detect_spoof_tf(crop_rgb)
+
     if label == "SPOOF":
         return JSONResponse({
             "status": "error",
             "msg": "❌ Spoof detected. Access denied.",
-            "spoof_score": spoof_score
+            "spoof_score": round(spoof_score, 4)
         })
 
-    # Embedding
     aligned = face_align.norm_crop(frame, face.kps)
     emb = get_embedding(aligned)
 
@@ -136,8 +134,9 @@ async def enroll_person(file: UploadFile = File(...), name: str = Form(...)):
     return JSONResponse({
         "status": "ok",
         "msg": f"{name} enrolled successfully.",
-        "spoof_score": spoof_score,
-        "bbox": [x1, y1, x2, y2]  # 🔹 ADDED
+        "spoof_score": round(spoof_score, 4),
+        "spoof_msg": "No spoof detected.",
+        "bbox": [x1, y1, x2, y2]
     })
 
 
@@ -146,25 +145,23 @@ async def search_person(file: UploadFile = File(...)):
     img_bytes = await file.read()
     frame = cv2.imdecode(np.frombuffer(img_bytes, np.uint8), cv2.IMREAD_COLOR)
 
-    # 🔹 MODIFIED: face detection
     face, bbox = get_largest_face(frame)
     if face is None:
         return JSONResponse({"status": "error", "msg": "No face detected."})
 
     x1, y1, x2, y2 = bbox
 
-    # Spoof detection
     sx1, sy1, sx2, sy2 = expand_bbox(bbox, frame.shape)
     crop_rgb = cv2.cvtColor(frame[sy1:sy2, sx1:sx2], cv2.COLOR_BGR2RGB)
     spoof_score, label = detect_spoof_tf(crop_rgb)
+
     if label == "SPOOF":
         return JSONResponse({
             "status": "error",
             "msg": "❌ Spoof detected. Access denied.",
-            "spoof_score": spoof_score
+            "spoof_score": round(spoof_score, 4)
         })
 
-    # Embedding
     aligned = face_align.norm_crop(frame, face.kps)
     emb = get_embedding(aligned)
 
@@ -180,21 +177,23 @@ async def search_person(file: UploadFile = File(...)):
         if score > best_score:
             best_score, best_name = score, name
 
+    spoof_message = "No spoof detected." if spoof_score <= 0.5 else ""
+
     if best_score < THRESHOLD:
         return JSONResponse({
             "status": "ok",
             "msg": "No match found.",
-            "score": float(best_score),
-            "spoof_score": spoof_score,
-            "bbox": [x1, y1, x2, y2]  # 🔹 ADDED
+            "Matching score": round(float(best_score), 4),
+            "spoof_score": round(spoof_score, 4),
+            "spoof_msg": spoof_message,
+            "bbox": [x1, y1, x2, y2]
         })
 
     return JSONResponse({
         "status": "ok",
         "msg": f"✅ Match found: {best_name}",
-        "score": float(best_score),
-        "spoof_score": spoof_score,
-        "bbox": [x1, y1, x2, y2]  # 🔹 ADDED
+        "Matching score": round(float(best_score), 4),
+        "spoof_score": round(spoof_score, 4),
+        "spoof_msg": spoof_message,
+        "bbox": [x1, y1, x2, y2]
     })
-
-
