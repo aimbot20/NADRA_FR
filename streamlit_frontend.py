@@ -1,5 +1,3 @@
-
-
 import streamlit as st
 import requests
 import io
@@ -16,7 +14,7 @@ input_method = st.radio("Select Input Method", ["📸 Use Camera", "📁 Upload 
 uploaded_img = None
 
 # ======================================
-# 📸 CAMERA WITH STABLE MOVABLE CIRCLE
+# CAMERA WITH OVERLAY
 # ======================================
 if input_method == "📸 Use Camera":
 
@@ -27,35 +25,27 @@ if input_method == "📸 Use Camera":
         display: inline-block;
     }
 
-.overlay-circle {
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    width: 200px;
-    height: 250px;
-    border-radius: 50%;
-    pointer-events: none;
-    transform: translate(-59%, -149%);
-
-    /* Softer border */
-    border: 2px solid rgba(0, 250, 0, 0.6);
-
-    /* Reduced glow intensity */
-    box-shadow:
-        0 0 6px rgba(0, 180, 0, 0.4),
-        0 0 15px rgba(0, 180, 0, 0.25),
-        inset 0 0 12px rgba(0, 180, 0, 0.2);
-
-    /* Very light inner tint */
-    background: radial-gradient(
-        ellipse at center,
-        rgba(0, 180, 0, 0.05) 0%,
-        rgba(0, 180, 0, 0.02) 50%,
-        transparent 70%
-    );
-}
-
-
+    .overlay-circle {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 200px;
+        height: 250px;
+        border-radius: 50%;
+        pointer-events: none;
+        transform: translate(-59%, -149%);
+        border: 2px solid rgba(0, 290, 0, 0.6);
+        box-shadow:
+            0 0 6px rgba(0, 250, 0, 0.4),
+            0 0 15px rgba(0, 250, 0, 0.25),
+            inset 0 0 12px rgba(0, 180, 0, 0.2);
+        background: radial-gradient(
+            ellipse at center,
+            rgba(0, 250, 0, 0.05) 0%,
+            rgba(0, 250, 0, 0.02) 50%,
+            transparent 70%
+        );
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -64,14 +54,11 @@ if input_method == "📸 Use Camera":
     st.markdown('<div class="overlay-circle"></div>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
-# ======================================
-# 📁 FILE UPLOAD OPTION
-# ======================================
 else:
     uploaded_img = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
 
 # ======================================
-# AFTER IMAGE IS CAPTURED / UPLOADED
+# AFTER IMAGE CAPTURE
 # ======================================
 if uploaded_img is not None:
     image = Image.open(uploaded_img).convert("RGB")
@@ -80,49 +67,7 @@ if uploaded_img is not None:
     image.save(buf, format="JPEG")
     buf.seek(0)
 
-    def draw_and_crop(img, bbox, scale=2.0):
-        x1, y1, x2, y2 = bbox
-        draw = ImageDraw.Draw(img)
-        draw.rectangle([x1, y1, x2, y2], outline="green", width=4)
-
-        face_w = x2 - x1
-        face_h = y2 - y1
-
-        cx = (x1 + x2) // 2
-        cy = (y1 + y2) // 2
-
-        crop_x1 = max(0, int(cx - face_w * scale / 2))
-        crop_x2 = min(img.width, int(cx + face_w * scale / 2))
-        crop_y1 = max(0, int(cy - face_h * scale / 2))
-        crop_y2 = min(img.height, int(cy + face_h * scale / 2))
-
-        return img.crop((crop_x1, crop_y1, crop_x2, crop_y2))
-
-    # ===============================
-    # ENROLL
-    # ===============================
-    if option == "Enroll in Database":
-        name = st.text_input("Enter your name")
-
-        if st.button("Enroll"):
-            if not name.strip():
-                st.warning("Please enter a name.")
-            else:
-                files = {"file": ("image.jpg", buf, "image/jpeg")}
-                data = {"name": name}
-                resp = requests.post(f"{API_URL}/enroll", files=files, data=data)
-                result = resp.json()
-
-                if "bbox" in result:
-                    image = draw_and_crop(image, result["bbox"], scale=2.0)
-
-                st.image(image, caption="Detected Face", use_container_width=False)
-                st.json(result)
-
-    # ===============================
-    # SEARCH
-    # ===============================
-    elif option == "Find Yourself":
+    if option == "Find Yourself":
 
         if st.button("Search"):
             files = {"file": ("image.jpg", buf, "image/jpeg")}
@@ -130,7 +75,28 @@ if uploaded_img is not None:
             result = resp.json()
 
             if "bbox" in result:
-                image = draw_and_crop(image, result["bbox"], scale=2.0)
+                x1, y1, x2, y2 = result["bbox"]
 
-            st.image(image, caption="Detected Face", use_container_width=False)
+                # 🔹 Crop expanded face area
+                cropped = image.crop((x1, y1, x2, y2))
+
+                # 🔹 Draw green bounding box inside cropped image
+                draw = ImageDraw.Draw(cropped)
+
+                # Because bbox is expanded, face rectangle is centered
+                face_width = x2 - x1
+                face_height = y2 - y1
+
+                # Draw rectangle with slight margin from border
+                draw.rectangle(
+                    [10, 10, cropped.width - 10, cropped.height - 10],
+                    outline="lime",
+                    width=4
+                )
+
+                st.image(cropped, caption="Detected Face", use_container_width=False)
+
+            else:
+                st.image(image, caption="Image", use_container_width=False)
+
             st.json(result)
