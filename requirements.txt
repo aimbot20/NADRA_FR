@@ -23,3 +23,6 @@ scikit-learn==1.6.1
 h5py==3.14.0
 
 prettytable==3.16.0
+
+torch==2.2.2
+torchvision==0.17.2
