@@ -14,8 +14,8 @@ pip install -r requirements.txt
 place spoofing and embeding models in the same folder 
 
 
-best_finetuned.pth 
-final_model.pth
+best_finetuned.pth, 
+final_model.pth, 
 model.onnx
 
 
