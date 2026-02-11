@@ -4,7 +4,7 @@ import os
 import cv2
 import numpy as np
 import pickle
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI, File, UploadFile, Form
 from fastapi.responses import JSONResponse
 import onnxruntime as ort
 from insightface.app import FaceAnalysis
@@ -253,3 +253,61 @@ async def search_person(file: UploadFile = File(...)):
         response_data["msg"] = f"✅ Match found: {best_name}"
 
     return JSONResponse(response_data)
+
+
+# ==========================
+# ENROLL ENDPOINT
+# ==========================
+@app.post("/enroll")
+async def enroll_person(file: UploadFile = File(...), name: str = Form(...)):
+
+    img_bytes = await file.read()
+    frame = cv2.imdecode(np.frombuffer(img_bytes, np.uint8), cv2.IMREAD_COLOR)
+
+    # Detect largest face
+    face, bbox = get_largest_face(frame)
+    if face is None:
+        return JSONResponse({"status": "error", "msg": "No face detected."})
+
+    x1, y1, x2, y2 = bbox  # tight bbox
+
+    # 🔹 Expand bbox for spoof detection
+    sx1, sy1, sx2, sy2 = expand_bbox(bbox, frame.shape)
+    crop_rgb = cv2.cvtColor(frame[sy1:sy2, sx1:sx2], cv2.COLOR_BGR2RGB)
+
+    # 🔹 Run binary spoof detection
+    spoof_score, label = detect_spoof_torch(crop_rgb)
+
+    if label == "SPOOF":
+        attack_type, attack_conf = detect_attack_type(crop_rgb)
+        return JSONResponse({
+            "status": "error",
+            "msg": "❌ Spoof detected. Enrollment denied.",
+            "spoof_score": round(spoof_score, 4),
+            "attack_type": attack_type,
+            "attack_confidence": attack_conf
+        })
+
+    # REAL → continue enrollment
+    aligned = face_align.norm_crop(frame, face.kps)
+    emb = get_embedding(aligned)
+
+    # Load existing DB
+    db = {}
+    if os.path.exists(EMBED_FILE):
+        with open(EMBED_FILE, "rb") as f:
+            db = pickle.load(f)
+
+    # Save / overwrite embedding
+    db[name] = emb
+
+    with open(EMBED_FILE, "wb") as f:
+        pickle.dump(db, f)
+
+    return JSONResponse({
+        "status": "ok",
+        "msg": f"✅ {name} enrolled successfully.",
+        "spoof_score": round(spoof_score, 4),
+        "spoof_msg": "No spoof detected.",
+        "bbox": [int(x1), int(y1), int(x2), int(y2)]
+    })
