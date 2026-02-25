@@ -1,3 +1,8 @@
+
+
+
+
+
 import streamlit as st
 import requests
 import io
@@ -8,8 +13,17 @@ API_URL = "http://localhost:8000"
 st.title("Face Recognition Portal")
 st.subheader("Enroll or Identify Yourself")
 
-option = st.radio("Choose Action", ["Enroll in Database", "Find Yourself"])
-input_method = st.radio("Select Input Method", ["📸 Use Camera", "📁 Upload Image"])
+# ✅ Added Bulk Enroll Option
+option = st.radio(
+    "Choose Action",
+    ["Enroll in Database-Single Picture", "Find Yourself-Single Picture", "Bulk Enroll Directory"]
+)
+
+# Only show camera/upload for single image operations
+if option != "Bulk Enroll Directory":
+    input_method = st.radio("Select Input Method", ["📸 Use Camera", "📁 Upload Image"])
+else:
+    input_method = None
 
 uploaded_img = None
 
@@ -54,11 +68,30 @@ if input_method == "📸 Use Camera":
     st.markdown('<div class="overlay-circle"></div>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
-else:
+elif input_method == "📁 Upload Image":
     uploaded_img = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
 
 # ======================================
-# AFTER IMAGE CAPTURE
+# BULK DIRECTORY ENROLL (NEW)
+# ======================================
+if option == "Bulk Enroll Directory":
+
+    st.subheader("Bulk Enroll From Directory")
+
+    directory_path = st.text_input("Enter Folder Path (Example: D:/Dataset/faces)")
+
+    if st.button("Start Bulk Enrollment"):
+
+        if directory_path.strip() == "":
+            st.warning("Please enter a directory path.")
+        else:
+            data = {"directory_path": directory_path}
+            resp = requests.post(f"{API_URL}/bulk_enroll_directory", data=data)
+            result = resp.json()
+            st.json(result)
+
+# ======================================
+# AFTER IMAGE CAPTURE (Single Image Flow)
 # ======================================
 if uploaded_img is not None:
 
@@ -71,7 +104,7 @@ if uploaded_img is not None:
     # ======================================
     # ENROLL
     # ======================================
-    if option == "Enroll in Database":
+    if option == "Enroll in Database-Single Picture":
 
         name = st.text_input("Enter Your Name")
 
@@ -105,7 +138,7 @@ if uploaded_img is not None:
     # ======================================
     # SEARCH
     # ======================================
-    if option == "Find Yourself":
+    if option == "Find Yourself-Single Picture":
 
         if st.button("Search"):
 
@@ -130,3 +163,7 @@ if uploaded_img is not None:
                 st.image(image, caption="Image", use_container_width=False)
 
             st.json(result)
+
+            # ⏱ Show processing time nicely
+            if "processing_time" in result:
+                st.info(f"⏱ Processing Time: {result['processing_time']} seconds")
