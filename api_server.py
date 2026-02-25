@@ -1,5 +1,5 @@
 # working with 2 spoofing models implemented (UPDATED FIRST MODEL)
-
+import time
 import os
 import cv2
 import numpy as np
@@ -197,18 +197,21 @@ def cosine_similarity(a, b):
 @app.post("/search")
 async def search_person(file: UploadFile = File(...)):
 
+    start_time = time.time()  # ⏱ start timer
+
     img_bytes = await file.read()
     frame = cv2.imdecode(np.frombuffer(img_bytes, np.uint8), cv2.IMREAD_COLOR)
 
     face, bbox = get_largest_face(frame)
     if face is None:
-        return JSONResponse({"status": "error", "msg": "No face detected."})
+        return JSONResponse({
+            "status": "error",
+            "msg": "No face detected."
+        })
 
-    x1, y1, x2, y2 = bbox  # tight bbox
+    x1, y1, x2, y2 = bbox
 
-    # 🔹 EXPAND for spoof detection
     sx1, sy1, sx2, sy2 = expand_bbox(bbox, frame.shape)
-
     crop_rgb = cv2.cvtColor(frame[sy1:sy2, sx1:sx2], cv2.COLOR_BGR2RGB)
 
     spoof_score, label = detect_spoof_torch(crop_rgb)
@@ -223,12 +226,14 @@ async def search_person(file: UploadFile = File(...)):
             "attack_confidence": attack_conf
         })
 
-    # REAL → continue matching
     aligned = face_align.norm_crop(frame, face.kps)
     emb = get_embedding(aligned)
 
     if not os.path.exists(EMBED_FILE):
-        return JSONResponse({"status": "error", "msg": "No embeddings database found."})
+        return JSONResponse({
+            "status": "error",
+            "msg": "No embeddings database found."
+        })
 
     with open(EMBED_FILE, "rb") as f:
         db = pickle.load(f)
@@ -239,12 +244,16 @@ async def search_person(file: UploadFile = File(...)):
         if score > best_score:
             best_score, best_name = score, name
 
+    end_time = time.time()  # ⏱ end timer
+    total_time = round(end_time - start_time, 4)
+
     response_data = {
         "status": "ok",
         "Matching score": round(float(best_score), 4),
         "spoof_score": round(spoof_score, 4),
         "spoof_msg": "No spoof detected.",
-        "bbox": [int(x1), int(y1), int(x2), int(y2)]  # return tight bbox
+        "processing_time": total_time,  # ⏱ added
+        "bbox": [int(x1), int(y1), int(x2), int(y2)]
     }
 
     if best_score < THRESHOLD:
@@ -253,7 +262,6 @@ async def search_person(file: UploadFile = File(...)):
         response_data["msg"] = f"✅ Match found: {best_name}"
 
     return JSONResponse(response_data)
-
 
 # ==========================
 # ENROLL ENDPOINT
@@ -310,4 +318,83 @@ async def enroll_person(file: UploadFile = File(...), name: str = Form(...)):
         "spoof_score": round(spoof_score, 4),
         "spoof_msg": "No spoof detected.",
         "bbox": [int(x1), int(y1), int(x2), int(y2)]
+    })
+
+
+# ==========================
+# BULK ENROLL DIRECTORY
+# ==========================
+@app.post("/bulk_enroll_directory")
+async def bulk_enroll_directory(directory_path: str = Form(...)):
+
+    if not os.path.exists(directory_path):
+        return JSONResponse({
+            "status": "error",
+            "msg": "Directory does not exist."
+        })
+
+    image_extensions = [".jpg", ".jpeg", ".png"]
+    files = [f for f in os.listdir(directory_path)
+             if os.path.splitext(f)[1].lower() in image_extensions]
+
+    if len(files) == 0:
+        return JSONResponse({
+            "status": "error",
+            "msg": "No valid images found in directory."
+        })
+
+    # Load existing DB
+    db = {}
+    if os.path.exists(EMBED_FILE):
+        with open(EMBED_FILE, "rb") as f:
+            db = pickle.load(f)
+
+    enrolled_count = 0
+    skipped_spoof = 0
+    skipped_no_face = 0
+
+    for file_name in files:
+
+        image_path = os.path.join(directory_path, file_name)
+        frame = cv2.imread(image_path)
+
+        if frame is None:
+            continue
+
+        face, bbox = get_largest_face(frame)
+        if face is None:
+            skipped_no_face += 1
+            continue
+
+        # Expand bbox for spoof detection
+        sx1, sy1, sx2, sy2 = expand_bbox(bbox, frame.shape)
+        crop_rgb = cv2.cvtColor(frame[sy1:sy2, sx1:sx2], cv2.COLOR_BGR2RGB)
+
+        spoof_score, label = detect_spoof_torch(crop_rgb)
+
+        if label == "SPOOF":
+            skipped_spoof += 1
+            continue  # 🚫 Ignore spoof images
+
+        # REAL → extract embedding
+        aligned = face_align.norm_crop(frame, face.kps)
+        emb = get_embedding(aligned)
+
+        # Use filename (without extension) as identity
+        identity_name = os.path.splitext(file_name)[0]
+        db[identity_name] = emb
+
+        enrolled_count += 1
+
+    # Save updated DB
+    with open(EMBED_FILE, "wb") as f:
+        pickle.dump(db, f)
+
+    return JSONResponse({
+        "status": "ok",
+        "msg": "Bulk enrollment completed.",
+        "total_images": len(files),
+        "enrolled": enrolled_count,
+        "skipped_spoof": skipped_spoof,
+        "skipped_no_face": skipped_no_face
     })
